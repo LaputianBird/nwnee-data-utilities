@@ -1,0 +1,94 @@
+name: Build and Release Executables
+
+on:
+  push:
+    branches: [main]
+  release:
+    types: [published]
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Full history needed for git log
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install nuitka "nwn>=0.0.14" "regex>=2024.11.6"
+
+    - name: Compile Python scripts with Nuitka
+      run: |
+        mkdir -p dist
+        for script in src/*.py; do
+          name=$(basename "$script")
+          if [ "$name" != "ndu.py" ]; then
+            nuitka --onefile --output-dir=dist "$script"
+          fi
+        done
+      shell: bash
+
+    - name: Archive executables by platform
+      run: |
+        platform="${{ runner.os }}"
+        archive_name="nwnee-data-utilities-${platform,,}-x64.zip"
+        cd dist
+        zip -r "../$archive_name" ./*
+        cd ..
+
+    - name: Prepare curated source package
+      run: |
+        mkdir -p source_package/src
+        cp src/*.py source_package/src/
+        cp README.txt pyproject.toml source_package/
+        zip -r "nwnee-data-utilities-src-${{ github.ref_name || 'dev' }}.zip" source_package
+
+    - name: Generate CHANGELOG.txt
+      if: github.event_name == 'release'
+      run: |
+        last_tag=$(git describe --tags --abbrev=0)
+        echo "Changes since $last_tag:" > CHANGELOG.txt
+        git log "$last_tag"..HEAD --pretty=format:"- %s (%an)" >> CHANGELOG.txt || echo "No previous tag found" > CHANGELOG.txt
+
+    - name: Install GitHub CLI
+      if: github.event_name == 'release'
+      run: |
+        sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
+        curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
+        sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
+        sudo apt update
+        sudo apt install gh -y
+
+    - name: Update release description with changelog (markdown)
+      if: github.event_name == 'release'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        release_id=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.ref_name }} --jq '.id')
+        changelog_content=$(cat CHANGELOG.txt)
+        # Prepare markdown body with a header and fenced code block
+        body="## Changelog\n\n\`\`\`\n${changelog_content}\n\`\`\`"
+        gh api --method PATCH /repos/${{ github.repository }}/releases/$release_id -F body="$body"
+
+    - name: Upload release assets
+      if: github.event_name == 'release'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          nwnee-data-utilities-*-x64.zip
+          nwnee-data-utilities-src-${{ github.ref_name }}.zip
+          CHANGELOG.txt
