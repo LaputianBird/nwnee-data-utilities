@@ -8,7 +8,7 @@ on:
 
 jobs:
   build:
-    name: Build on ${{ matrix.os }}
+    name: Build on ${{ matrix.platform }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -47,14 +47,30 @@ jobs:
         shell: bash
         run: mkdir -p dist
 
+      - name: Install upx (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: choco install upx -y
+
+      - name: Install upx (Linux)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: sudo apt-get update && sudo apt-get install -y upx
+
+      - name: Install upx (MacOS)
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: brew install upx
+
       - name: Compile Python scripts with Nuitka (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
+        env: NUITKA_ALLOW_BINARY_DEPENDENCIES_DOWNLOAD: "1"
         run: |
           Get-ChildItem -Path src -Filter *.py | ForEach-Object {
             if ($_.Name -ne 'ndu.py') {
               Write-Host "Compiling $($_.Name)..."
-              nuitka --onefile --output-dir=dist $_.FullName
+              nuitka --onefile --lto=yes --enable-upx --output-dir=dist $_.FullName
             }
           }
 
@@ -66,7 +82,7 @@ jobs:
             name=$(basename "$script")
             if [ "$name" != "ndu.py" ]; then
               echo "Compiling $name..."
-              nuitka --onefile --output-dir=dist "$script"
+              nuitka --onefile --lto=yes --enable-upx --output-dir=dist "$script"
             fi
           done
 
@@ -86,7 +102,7 @@ jobs:
         run: |
           $archive_name = "nwnee-data-utilities-${{ matrix.platform }}-x64.zip"
           cd dist
-          Compress-Archive -Path * -DestinationPath "../$archive_name"
+          Compress-Archive -Path *.exe -DestinationPath "../$archive_name"
           cd ..
           Write-Host "Created archive: $archive_name"
 
@@ -96,7 +112,7 @@ jobs:
         run: |
           archive_name="nwnee-data-utilities-${{ matrix.platform }}-x64.zip"
           cd dist
-          zip -r "../$archive_name" ./*
+          zip -r "../$archive_name" ./*.bin
           cd ..
           echo "Created archive: $archive_name"
 
@@ -118,10 +134,10 @@ jobs:
 
       - name: Create source package
         run: |
-          mkdir -p source_package/src
-          cp src/*.py source_package/src/
-          cp README.txt pyproject.toml source_package/ 2>/dev/null || true
-          zip -r "nwnee-data-utilities-src-${{ github.ref_name }}.zip" source_package
+          mkdir -p nwnee-data-utilities-python
+          cp src/*.py nwnee-data-utilities-python
+          cp README.txt pyproject.toml nwnee-data-utilities-python 2>/dev/null || true
+          zip -r "nwnee-data-utilities-python.zip" nwnee-data-utilities-python
 
       - name: Upload source artifact
         uses: actions/upload-artifact@v4
