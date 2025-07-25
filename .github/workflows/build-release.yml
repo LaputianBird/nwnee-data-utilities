@@ -71,7 +71,7 @@ jobs:
           Get-ChildItem -Path src -Filter *.py | ForEach-Object {
             if ($_.Name -ne 'ndu.py') {
               Write-Host "Compiling $($_.Name)..."
-              nuitka --onefile --lto=yes --enable-upx --output-dir=dist $_.FullName
+              nuitka --onefile --lto=yes --verbose --output-dir=dist $_.FullName
             }
           }
 
@@ -83,7 +83,7 @@ jobs:
             name=$(basename "$script")
             if [ "$name" != "ndu.py" ]; then
               echo "Compiling $name..."
-              nuitka --onefile --lto=yes --enable-upx --output-dir=dist "$script"
+              nuitka --onefile --lto=yes --verbose --output-dir=dist "$script"
             fi
           done
 
