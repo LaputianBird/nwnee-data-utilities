@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Custom
+.local
+*.log
+.print_repo_structure.py
