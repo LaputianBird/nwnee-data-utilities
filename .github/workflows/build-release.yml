@@ -30,26 +30,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install nuitka "nwn>=0.0.14" "regex>=2024.11.6"
 
-      - name: Compile Python scripts with Nuitka
-        shell: ${{ matrix.os == 'windows-latest' && 'pwsh' || 'bash' }}
-        run: |
-          if ($env:RUNNER_OS -eq 'Windows') {
-            mkdir dist
-            Get-ChildItem -Path src -Filter *.py | ForEach-Object {
-              if ($_.Name -ne 'ndu.py') {
-                nuitka --onefile --output-dir=dist $_.FullName
-              }
-            }
+    - name: Compile Python scripts with Nuitka (Windows)
+      if: matrix.os == 'windows-latest'
+      shell: pwsh
+      run: |
+        mkdir dist
+        Get-ChildItem -Path src -Filter *.py | ForEach-Object {
+          if ($_.Name -ne 'ndu.py') {
+            nuitka --onefile --output-dir=dist $_.FullName
           }
-          else {
-            mkdir -p dist
-            for script in src/*.py; do
-              name=$(basename "$script")
-              if [ "$name" != "ndu.py" ]; then
-                nuitka --onefile --output-dir=dist "$script"
-              fi
-            done
-          }
+        }
+
+    - name: Compile Python scripts with Nuitka (Unix)
+      if: matrix.os != 'windows-latest'
+      shell: bash
+      run: |
+        mkdir -p dist
+        for script in src/*.py; do
+          name=$(basename "$script")
+          if [ "$name" != "ndu.py" ]; then
+            nuitka --onefile --output-dir=dist "$script"
+          fi
+        done
 
       - name: Archive executables by platform
         run: |
