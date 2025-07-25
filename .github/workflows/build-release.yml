@@ -62,16 +62,25 @@ jobs:
         shell: bash
         run: brew install upx
 
+      - name: Setup MSVC (Windows)
+        if: matrix.platform == 'windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Compile Python scripts with Nuitka (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
         env:
           NUITKA_ALLOW_BINARY_DEPENDENCIES_DOWNLOAD: "1"
+          NUITKA_CACHE_DIR: ${{ runner.temp }}/nuitka-cache
         run: |
           Get-ChildItem -Path src -Filter *.py | ForEach-Object {
             if ($_.Name -ne 'ndu.py') {
               Write-Host "Compiling $($_.Name)..."
-              nuitka --onefile --lto=yes --verbose --output-dir=dist $_.FullName
+              nuitka --onefile --lto=yes --verbose --assume-yes-for-downloads --output-dir=dist $_.FullName
+              if ($LASTEXITCODE -ne 0) {
+                Write-Error "Failed to compile $($_.Name)"
+                exit $LASTEXITCODE
+              }
             }
           }
 
@@ -103,6 +112,15 @@ jobs:
         run: |
           $archive_name = "nwnee-data-utilities-${{ matrix.platform }}-x64.zip"
           cd dist
+          $exeFiles = Get-ChildItem -Filter "*.exe"
+          if ($exeFiles.Count -eq 0) {
+            Write-Error "No .exe files found in dist directory!"
+            Write-Host "Contents of dist directory:"
+            Get-ChildItem | ForEach-Object { Write-Host "  $($_.Name)" }
+            exit 1
+          }
+          Write-Host "Found .exe files to archive:"
+          $exeFiles | ForEach-Object { Write-Host "  $($_.Name)" }
           Compress-Archive -Path *.exe -DestinationPath "../$archive_name"
           cd ..
           Write-Host "Created archive: $archive_name"
@@ -143,8 +161,8 @@ jobs:
       - name: Upload source artifact
         uses: actions/upload-artifact@v4
         with:
-          name: source-package
-          path: nwnee-data-utilities-src-${{ github.ref_name }}.zip
+          name: nwnee-data-utilities-python
+          path: nwnee-data-utilities-python.zip
 
   release:
     name: Upload Release Assets
@@ -168,6 +186,6 @@ jobs:
         with:
           files: |
             nwnee-data-utilities-*-x64.zip
-            nwnee-data-utilities-src-${{ github.ref_name }}.zip
+            nwnee-data-utilities-python.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
