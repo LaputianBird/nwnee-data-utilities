@@ -56,13 +56,6 @@ jobs:
         cp README.txt pyproject.toml source_package/
         zip -r "nwnee-data-utilities-src-${{ github.ref_name || 'dev' }}.zip" source_package
 
-    - name: Generate CHANGELOG.txt
-      if: github.event_name == 'release'
-      run: |
-        last_tag=$(git describe --tags --abbrev=0)
-        echo "Changes since $last_tag:" > CHANGELOG.txt
-        git log "$last_tag"..HEAD --pretty=format:"- %s (%an)" >> CHANGELOG.txt || echo "No previous tag found" > CHANGELOG.txt
-
     - name: Install GitHub CLI
       if: github.event_name == 'release'
       run: |
@@ -72,17 +65,6 @@ jobs:
         echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
         sudo apt update
         sudo apt install gh -y
-
-    - name: Update release description with changelog (markdown)
-      if: github.event_name == 'release'
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        release_id=$(gh api repos/${{ github.repository }}/releases/tags/${{ github.ref_name }} --jq '.id')
-        changelog_content=$(cat CHANGELOG.txt)
-        # Prepare markdown body with a header and fenced code block
-        body="## Changelog\n\n\`\`\`\n${changelog_content}\n\`\`\`"
-        gh api --method PATCH /repos/${{ github.repository }}/releases/$release_id -F body="$body"
 
     - name: Upload release assets
       if: github.event_name == 'release'
