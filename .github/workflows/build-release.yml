@@ -12,85 +12,143 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history needed for git log
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.13'
+          cache: 'pip'
 
-      - name: Install dependencies (Unix)
-        if: matrix.os != 'windows-latest'
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install nuitka "nwn>=0.0.14" "regex>=2024.11.6"
 
-      - name: Install dependencies (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Create distribution directory (Windows)
+        if: matrix.platform == 'windows'
         shell: pwsh
-        run: |
-          python -m pip install --upgrade pip
-          pip install nuitka "nwn>=0.0.14" "regex>=2024.11.6"
+        run: New-Item -ItemType Directory -Force -Path dist
+
+      - name: Create distribution directory (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: mkdir -p dist
 
       - name: Compile Python scripts with Nuitka (Windows)
-        if: matrix.os == 'windows-latest'
+        if: matrix.platform == 'windows'
         shell: pwsh
         run: |
-          mkdir dist
           Get-ChildItem -Path src -Filter *.py | ForEach-Object {
             if ($_.Name -ne 'ndu.py') {
+              Write-Host "Compiling $($_.Name)..."
               nuitka --onefile --output-dir=dist $_.FullName
             }
           }
 
       - name: Compile Python scripts with Nuitka (Unix)
-        if: matrix.os != 'windows-latest'
+        if: matrix.platform != 'windows'
         shell: bash
         run: |
-          mkdir -p dist
           for script in src/*.py; do
             name=$(basename "$script")
             if [ "$name" != "ndu.py" ]; then
+              echo "Compiling $name..."
               nuitka --onefile --output-dir=dist "$script"
             fi
           done
 
-      - name: Archive executables by platform
+      - name: List compiled executables (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: Get-ChildItem -Path dist -Recurse | Format-Table Name, Length, LastWriteTime
+
+      - name: List compiled executables (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: ls -la dist/
+
+      - name: Create platform archive (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
         run: |
-          platform="${{ runner.os }}"
-          archive_name="nwnee-data-utilities-${platform,,}-x64.zip"
+          $archive_name = "nwnee-data-utilities-${{ matrix.platform }}-x64.zip"
+          cd dist
+          Compress-Archive -Path * -DestinationPath "../$archive_name"
+          cd ..
+          Write-Host "Created archive: $archive_name"
+
+      - name: Create platform archive (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          archive_name="nwnee-data-utilities-${{ matrix.platform }}-x64.zip"
           cd dist
           zip -r "../$archive_name" ./*
           cd ..
+          echo "Created archive: $archive_name"
 
-      - name: Prepare curated source package
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: executables-${{ matrix.platform }}
+          path: nwnee-data-utilities-${{ matrix.platform }}-x64.zip
+          retention-days: 30
+
+  create-source-package:
+    name: Create Source Package
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Create source package
         run: |
           mkdir -p source_package/src
           cp src/*.py source_package/src/
-          cp README.txt pyproject.toml source_package/
-          zip -r "nwnee-data-utilities-src-${{ github.ref_name || 'dev' }}.zip" source_package
+          cp README.txt pyproject.toml source_package/ 2>/dev/null || true
+          zip -r "nwnee-data-utilities-src-${{ github.ref_name }}.zip" source_package
 
-      - name: Install GitHub CLI
-        if: github.event_name == 'release'
-        run: |
-          sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-key C99B11DEB97541F0
-          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
-          sudo chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
-          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-          sudo apt update
-          sudo apt install gh -y
+      - name: Upload source artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-package
+          path: nwnee-data-utilities-src-${{ github.ref_name }}.zip
+
+  release:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs: [build, create-source-package]
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - name: List downloaded files
+        run: ls -la
 
       - name: Upload release assets
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: |
             nwnee-data-utilities-*-x64.zip
             nwnee-data-utilities-src-${{ github.ref_name }}.zip
-            CHANGELOG.txt
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
