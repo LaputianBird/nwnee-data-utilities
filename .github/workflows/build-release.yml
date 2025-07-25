@@ -65,7 +65,8 @@ jobs:
       - name: Compile Python scripts with Nuitka (Windows)
         if: matrix.platform == 'windows'
         shell: pwsh
-        env: NUITKA_ALLOW_BINARY_DEPENDENCIES_DOWNLOAD: "1"
+        env:
+          NUITKA_ALLOW_BINARY_DEPENDENCIES_DOWNLOAD: "1"
         run: |
           Get-ChildItem -Path src -Filter *.py | ForEach-Object {
             if ($_.Name -ne 'ndu.py') {
