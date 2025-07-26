@@ -1649,6 +1649,21 @@ class _KeyBif:
                             with open(key_output_dp / filename, mode="wb") as f:
                                 f.write(rd.read_file(resource))
 
+    def write_default_recipes(self, arg_output=None):
+        """
+        Writes the default recipes configuration to a file in the default data directory.
+
+        Args:
+            arg_output (Path or str): Optional override for the output directory.
+
+        Returns:
+            Path: Path to the written file.
+        """
+        recipes_fp = _Paths._get_output_dp(arg_output) / "ndu_keybif.recipes"
+        recipes_fp.write_text(self._default_recipes, encoding="utf-8")
+        print(f'Default recipes generated as: {recipes_fp}')
+        return recipes_fp
+
     class _InputResolver:
         def __init__(self, outer, arg_recipes):
             self._structure = outer._input_structure
@@ -1859,10 +1874,10 @@ class App:
         Handles game resource extraction related to KEY/BIF files.
         Methods:
             - export_game_resources
+            - write_default_recipes
     - erf:
         Handles ERF archive processing with separate namespaces for batch
         and single-file operations.
-
         - erf.batch:
             Batch processing methods for ERF archives.
             Methods:
@@ -1900,6 +1915,8 @@ class App:
                 - is_gff_file
                 - is_ndugff_file
                 - is_json_file
+                - is_erf_file
+                - is_erf_folder
     """
 
     def __init__(self):
@@ -1910,6 +1927,7 @@ class App:
         self.keybif = SimpleNamespace()
         expose(self.keybif, _KeyBif(), [
             "export_game_resources",
+            "write_default_recipes",
         ])
         self.erf = SimpleNamespace()
         self.erf.batch = SimpleNamespace()
